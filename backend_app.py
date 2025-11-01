@@ -1,58 +1,86 @@
+# backend_app.py
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Allow requests from frontend (localhost)
+CORS(app)  # erlaubt Frontend (andere Origin) auf diese API zuzugreifen
 
-# --- Hard-coded list of posts ---
+# --- In-Memory "Datenbank" ---
 POSTS = [
     {"id": 1, "title": "First Post", "content": "This is the first post."},
-    {"id": 2, "title": "Second Post", "content": "This is the second post."},
+    {"id": 2, "title": "Second Post", "content": "This is the second post."}
 ]
 
+# --- Hilfsfunktionen ---
+def get_post_index_by_id(post_id: int) -> int:
+    """Gibt den Index des Posts mit passender ID zurück, oder -1 wenn nicht gefunden."""
+    for i, p in enumerate(POSTS):
+        if p["id"] == post_id:
+            return i
+    return -1
 
-# ---------- GET: List all posts ----------
-@app.get("/api/posts")
+def next_id() -> int:
+    """Erzeuge eine neue eindeutige Integer-ID."""
+    if not POSTS:
+        return 1
+    return max(p["id"] for p in POSTS) + 1
+
+# --- Endpoints ---
+
+@app.route("/api/posts", methods=["GET"])
 def list_posts():
-    """Return all blog posts."""
+    """Liste aller Blogposts."""
     return jsonify(POSTS), 200
 
-
-# ---------- POST: Add a new post ----------
-@app.post("/api/posts")
+@app.route("/api/posts", methods=["POST"])
 def add_post():
-    """Add a new blog post."""
-    data = request.get_json()
-
-    # Validate request body
-    if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
-
+    """
+    Neuen Blogpost anlegen.
+    Erwartet JSON: {"title": "...", "content": "..."}
+    """
+    data = request.get_json(silent=True) or {}
     title = data.get("title")
     content = data.get("content")
 
-    # Check for missing fields
     missing = []
     if not title:
         missing.append("title")
     if not content:
         missing.append("content")
-
     if missing:
-        return (
-            jsonify({"error": f"Missing field(s): {', '.join(missing)}"}),
-            400,
-        )
+        return jsonify({
+            "error": "Bad Request",
+            "message": f"Missing required field(s): {', '.join(missing)}"
+        }), 400
 
-    # Generate a new unique ID (max existing ID + 1)
-    new_id = max([p["id"] for p in POSTS], default=0) + 1
-
-    # Create new post
-    new_post = {"id": new_id, "title": title, "content": content}
+    new_post = {
+        "id": next_id(),
+        "title": title,
+        "content": content
+    }
     POSTS.append(new_post)
+    return jsonify(new_post), 201
 
-    return jsonify(new_post), 201  # 201 Created
+@app.route("/api/posts/<int:post_id>", methods=["DELETE"])
+def delete_post(post_id: int):
+    """
+    Blogpost per ID löschen.
+    Erfolgsantwort: {"message": "Post with id <id> has been deleted successfully."}
+    """
+    idx = get_post_index_by_id(post_id)
+    if idx == -1:
+        return jsonify({
+            "error": "Not Found",
+            "message": f"Post with id {post_id} was not found."
+        }), 404
+
+    # löschen
+    POSTS.pop(idx)
+    return jsonify({
+        "message": f"Post with id {post_id} has been deleted successfully."
+    }), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002, debug=True)
+    # Port 5002 wie in deiner Aufgabe/Tests
+    app.run(host="127.0.0.1", port=5002, debug=True)
